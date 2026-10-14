@@ -48,7 +48,7 @@ export function OwnerScanner({ user }: OwnerScannerProps) {
       .catch(err => console.error(err));
   };
 
-  const handleScanAction = async (actionType: 'check-in' | 'check-out', customToken?: string) => {
+  const handleScanAction = async (actionType: 'check-in' | 'check-out', customToken?: string, simulateOvertimeHours?: number) => {
     const targetToken = customToken || tokenInput.trim();
     if (!targetToken) {
       setError('กรุณากรอกหรือเลือก QR Token เพื่อดำเนินการ');
@@ -68,7 +68,10 @@ export function OwnerScanner({ user }: OwnerScannerProps) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ qrToken: targetToken })
+        body: JSON.stringify({ 
+          qrToken: targetToken,
+          simulateOvertimeHours: simulateOvertimeHours || 0
+        })
       });
 
       const data = await res.json();
@@ -163,6 +166,16 @@ export function OwnerScanner({ user }: OwnerScannerProps) {
                 <span>สแกนเช็คเอาท์ (ออก)</span>
               </button>
             </div>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => handleScanAction('check-out', undefined, 1)}
+              className="w-full py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <AlertCircle className="w-4 h-4 text-amber-600" />
+              <span>⚡ ทดสอบ: สแกนออกเกินเวลา (+1 ชม. ค่าปรับ 2 เท่า)</span>
+            </button>
           </div>
 
           {/* Action Result Box */}
@@ -295,12 +308,21 @@ export function OwnerScanner({ user }: OwnerScannerProps) {
                         </button>
                       )}
                       {b.Reservation_Status === 'Checked_In' && (
-                        <button
-                          onClick={() => handleScanAction('check-out', b.QRToken)}
-                          className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
-                        >
-                          สแกนออก
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleScanAction('check-out', b.QRToken)}
+                            className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
+                          >
+                            สแกนออก
+                          </button>
+                          <button
+                            onClick={() => handleScanAction('check-out', b.QRToken, 1)}
+                            title="จำลองกรณีสแกนออกเกินเวลาที่จองไว้ 1 ชั่วโมง"
+                            className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg text-xs font-bold transition-all shadow-sm"
+                          >
+                            ⚡ เกินเวลา (+1 ชม.)
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

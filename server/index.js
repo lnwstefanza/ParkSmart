@@ -1273,12 +1273,16 @@ app.post('/api/scan/check-out', authenticate, (req, res) => {
   }
 
   const nowBangkok = getBangkokNow();
-  const outTime = parseDateSafeServer(nowBangkok)?.getTime() || Date.now();
+  const bookedEndTime = parseDateSafeServer(detail.Booked_End)?.getTime() || Date.now();
+  const simHours = Number(req.body?.simulateOvertimeHours) || 0;
+  let outTime = parseDateSafeServer(nowBangkok)?.getTime() || Date.now();
+  if (simHours > 0 && bookedEndTime) {
+    outTime = bookedEndTime + (simHours * 3600 * 1000) + (10 * 60 * 1000);
+  }
   const inTime = parseDateSafeServer(usage.Actual_Check_In)?.getTime() || Date.now();
   const parkedMin = Math.max(1, Math.ceil((outTime - inTime) / 60000));
 
   // Check Overtime against Booked_End
-  const bookedEndTime = parseDateSafeServer(detail.Booked_End)?.getTime() || Date.now();
   let overtimePenalty = 0;
   let overtimeMinutes = 0;
 
@@ -1395,10 +1399,18 @@ app.post('/api/scan/check-out', authenticate, (req, res) => {
 
 app.get('/api/favorites', authenticate, (req, res) => {
   const lots = db.prepare(`
-    SELECT l.*, f.Favorite_ID
+    SELECT 
+      l.*, 
+      f.Favorite_ID,
+      COUNT(s.Slot_ID) AS total_slots,
+      SUM(CASE WHEN s.ParkingSlot_Status = 'Available' THEN 1 ELSE 0 END) AS available_slots,
+      SUM(CASE WHEN s.ParkingSlot_Status = 'Occupied' THEN 1 ELSE 0 END) AS occupied_slots,
+      SUM(CASE WHEN s.ParkingSlot_Status = 'Reserved' THEN 1 ELSE 0 END) AS reserved_slots
     FROM FavoriteLot f
     JOIN ParkingLot l ON f.Lot_ID = l.Lot_ID
+    LEFT JOIN ParkingSlot s ON l.Lot_ID = s.Lot_ID
     WHERE f.Customer_ID = ?
+    GROUP BY l.Lot_ID, f.Favorite_ID
     ORDER BY f.Favorite_ID DESC
   `).all(req.user.id);
   res.json(lots);
@@ -1458,7 +1470,9 @@ app.get('/api/complaints', authenticate, (req, res) => {
 });
 
 app.post('/api/complaints', authenticate, (req, res) => {
-  const { title, description, bookingId } = req.body;
+  const title = req.body.Title || req.body.title;
+  const description = req.body.Description || req.body.description;
+  const bookingId = req.body.Booking_ID || req.body.bookingId;
   if (!title || !description) {
     return res.status(400).json({ error: 'กรุณากรอกหัวข้อและรายละเอียดข้อร้องเรียน' });
   }
@@ -1636,6 +1650,61 @@ app.get('/api/admin/users', authenticate, requireRole('Admin'), (req, res) => {
   `).all();
 
   res.json({ customers, owners });
+});
+
+// Admin: Get specific customer's booking history
+app.get('/api/admin/customers/:id/bookings', authenticate, requireRole('Admin'), (req, res) => {
+  try {
+    const customerId = Number(req.params.id);
+    const customer = db.prepare('SELECT Customer_ID as id, Username, FName, LName, Phone_Number, Email, Account_Status FROM Customer WHERE Customer_ID = ?').get(customerId);
+    
+    const sql = `
+      SELECT 
+        r.Booking_ID,
+        r.ReserveDate,
+        d.Detail_ID,
+        d.Slot_ID,
+        d.LicensePlate,
+        d.Expected_Arrival,
+        d.Hold_Until,
+        d.Booked_Hours,
+        d.Booked_End,
+        d.Base_Fee,
+        d.Late_Penalty,
+        d.Overtime_Penalty,
+        d.Deposit_Amount,
+        d.Parked_Minutes,
+        d.Totalfee,
+        d.Reservation_Status,
+        d.QRToken,
+        s.SpaceCode,
+        s.Floor,
+        s.Zone,
+        l.Lot_ID,
+        l.LotName,
+        l.Location,
+        l.FeeRate_Per_Hour,
+        l.Daily_Max_Fee,
+        u.Actual_Check_In,
+        u.Actual_Check_Out
+      FROM Reservation r
+      JOIN Reservation_Detail d ON r.Booking_ID = d.Booking_ID
+      JOIN ParkingSlot s ON d.Slot_ID = s.Slot_ID
+      JOIN ParkingLot l ON s.Lot_ID = l.Lot_ID
+      LEFT JOIN UsageLog u ON r.Booking_ID = u.Booking_ID
+      WHERE r.Customer_ID = ?
+      ORDER BY r.Booking_ID DESC
+    `;
+    const bookings = db.prepare(sql).all(customerId);
+
+    res.json({
+      success: true,
+      customer,
+      bookings
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.patch('/api/admin/users/:role/:id', authenticate, requireRole('Admin'), (req, res) => {

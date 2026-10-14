@@ -407,9 +407,16 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
     // 7. Auth Register
     if (path === '/api/auth/register' && method === 'POST') {
       const { username, password, fname, lname, phone, email, role } = body || {};
-      const newId = Date.now();
       const targetCollection = role === 'Parking_Owner' ? 'Parking_Owner' : 'Customer';
       const pkName = role === 'Parking_Owner' ? 'ParkingOwner_ID' : 'Customer_ID';
+
+      const allUsersSnap = await getDocs(collection(db, targetCollection));
+      let maxId = 0;
+      allUsersSnap.forEach(d => {
+        const id = Number(d.data()[pkName] || d.id);
+        if (id > maxId && id < 1000000) maxId = id;
+      });
+      const newId = maxId + 1;
 
       let hashedPassword = password;
       try {
@@ -417,6 +424,10 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
       } catch {
         hashedPassword = password;
       }
+
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const now = new Date();
+      const nowStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
       const newRecord = {
         [pkName]: newId,
@@ -427,7 +438,10 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
         Phone_Number: phone || '',
         Email: email || '',
         Account_Status: 'Active',
-        Created_At: new Date().toISOString()
+        Created_At: nowStr,
+        Created_By: username || 'SYSTEM',
+        Updated_At: nowStr,
+        Updated_By: username || 'SYSTEM'
       };
 
       await setDoc(doc(db, targetCollection, String(newId)), newRecord);
@@ -721,8 +735,8 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
         const resvSnap = await getDoc(doc(db, 'Reservation_Detail', String(targetId)));
         if (resvSnap.exists()) {
           const rData = resvSnap.data();
-          const now = Date.now();
-          const nowIso = new Date().toISOString();
+          let now = Date.now();
+          let nowIso = new Date().toISOString();
 
           // Check overtime penalty (2x rate)
           let overtimePenalty = 0;
@@ -734,6 +748,13 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
             } else {
               bookedEndTime = new Date(rData.Booked_End.replace(' ', 'T') + '+07:00').getTime();
             }
+
+            const simHours = Number(body?.simulateOvertimeHours) || 0;
+            if (simHours > 0 && !isNaN(bookedEndTime)) {
+              now = bookedEndTime + (simHours * 3600 * 1000) + (10 * 60 * 1000);
+              nowIso = new Date(now).toISOString();
+            }
+
             if (!isNaN(bookedEndTime) && now > bookedEndTime) {
               overtimeMinutes = Math.floor((now - bookedEndTime) / 60000);
               const overtimeHours = Math.ceil(overtimeMinutes / 60);
@@ -911,22 +932,131 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
 
     // 22. Admin Users (GET /api/admin/users)
     if (path === '/api/admin/users' && method === 'GET') {
-      const [custSnap, ownerSnap, adminSnap] = await Promise.all([
+      const [custSnap, ownerSnap, adminSnap, resvDetailSnap, resvSnap, lotsSnap] = await Promise.all([
         getDocs(collection(db, 'Customer')),
         getDocs(collection(db, 'Parking_Owner')),
-        getDocs(collection(db, 'Administrator'))
+        getDocs(collection(db, 'Administrator')),
+        getDocs(collection(db, 'Reservation_Detail')),
+        getDocs(collection(db, 'Reservation')),
+        getDocs(collection(db, 'ParkingLot'))
       ]);
 
+      // Calculate bookings per customer
+      const bookingCounts = new Map<string, number>();
+      
+      // Tally from Reservation_Detail
+      resvDetailSnap.forEach(d => {
+        const data = d.data();
+        const cid = String(data.Customer_ID ?? data.customerId ?? '');
+        if (cid) {
+          bookingCounts.set(cid, (bookingCounts.get(cid) || 0) + 1);
+        }
+      });
+
+      // Also check Reservation header in case detail didn't store Customer_ID
+      resvSnap.forEach(d => {
+        const data = d.data();
+        const cid = String(data.Customer_ID ?? data.customerId ?? '');
+        if (cid && !bookingCounts.has(cid)) {
+          bookingCounts.set(cid, (bookingCounts.get(cid) || 0) + 1);
+        }
+      });
+
+      // Calculate lots per owner
+      const lotCounts = new Map<string, number>();
+      lotsSnap.forEach(d => {
+        const data = d.data();
+        const oid = String(data.ParkingOwner_ID ?? data.ownerId ?? '');
+        if (oid) {
+          lotCounts.set(oid, (lotCounts.get(oid) || 0) + 1);
+        }
+      });
+
       const customers: any[] = [];
-      custSnap.forEach(d => customers.push({ ...d.data(), id: d.data().Customer_ID || d.id }));
+      custSnap.forEach(d => {
+        const data = d.data();
+        const id = data.Customer_ID ?? d.id;
+        const totalBookings = bookingCounts.get(String(id)) ?? bookingCounts.get(String(d.id)) ?? 0;
+        customers.push({ 
+          ...data, 
+          id, 
+          role: 'Customer',
+          totalBookings 
+        });
+      });
 
       const owners: any[] = [];
-      ownerSnap.forEach(d => owners.push({ ...d.data(), id: d.data().ParkingOwner_ID || d.id }));
+      ownerSnap.forEach(d => {
+        const data = d.data();
+        const id = data.ParkingOwner_ID ?? d.id;
+        const totalLots = lotCounts.get(String(id)) ?? lotCounts.get(String(d.id)) ?? 0;
+        owners.push({ 
+          ...data, 
+          id, 
+          role: 'Owner',
+          totalLots 
+        });
+      });
 
       const admins: any[] = [];
-      adminSnap.forEach(d => admins.push({ ...d.data(), id: d.data().Admin_ID || d.id }));
+      adminSnap.forEach(d => admins.push({ ...d.data(), id: d.data().Admin_ID || d.id, role: 'Admin' }));
 
       return jsonResponse({ customers, owners, admins });
+    }
+
+    // 22.1 Admin Get Customer Bookings History (GET /api/admin/customers/:id/bookings)
+    const adminCustomerBookingsMatch = path.match(/^\/api\/admin\/customers\/(\d+)\/bookings$/);
+    if (adminCustomerBookingsMatch && method === 'GET') {
+      const customerId = adminCustomerBookingsMatch[1];
+      const [resvSnap, lotsSnap, slotsSnap, custSnap] = await Promise.all([
+        getDocs(collection(db, 'Reservation_Detail')),
+        getDocs(collection(db, 'ParkingLot')),
+        getDocs(collection(db, 'ParkingSlot')),
+        getDoc(doc(db, 'Customer', String(customerId)))
+      ]);
+
+      const lotsMap = new Map();
+      lotsSnap.forEach(l => lotsMap.set(Number(l.id), l.data()));
+
+      const slotsMap = new Map();
+      slotsSnap.forEach(s => slotsMap.set(Number(s.id), s.data()));
+
+      const bookings: any[] = [];
+      resvSnap.forEach(d => {
+        const data = d.data();
+        if (String(data.Customer_ID) === String(customerId)) {
+          const lot = lotsMap.get(Number(data.Lot_ID)) || {};
+          const slot = slotsMap.get(Number(data.Slot_ID)) || {};
+          bookings.push({
+            ...data,
+            Booking_ID: data.Booking_ID || d.id,
+            LotName: lot.LotName || 'ลานจอดรถในระบบ',
+            Location: lot.Location || '-',
+            FeeRate_Per_Hour: lot.FeeRate_Per_Hour || 20,
+            SpaceCode: slot.SpaceCode || data.SpaceCode || 'ช่องจอดทั่วไป',
+            Floor: slot.Floor || 'Ground',
+            Zone: slot.Zone || 'Zone A'
+          });
+        }
+      });
+
+      bookings.sort((a, b) => (Number(b.Booking_ID) || 0) - (Number(a.Booking_ID) || 0));
+
+      let customerData: any = null;
+      if (custSnap.exists()) {
+        customerData = { ...custSnap.data(), id: customerId };
+      } else {
+        const queryCust = await getDocs(query(collection(db, 'Customer'), where('Customer_ID', '==', Number(customerId))));
+        if (!queryCust.empty) {
+          customerData = { ...queryCust.docs[0].data(), id: customerId };
+        }
+      }
+
+      return jsonResponse({
+        success: true,
+        customer: customerData,
+        bookings
+      });
     }
 
     // 23. Admin Toggle User Status (PATCH /api/admin/users/:role/:id)
@@ -1221,29 +1351,81 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
 
     // 27. Complaints List & Create & Resolve
     if (path === '/api/complaints' && method === 'GET') {
+      const user = getStoredUser(init);
       const snap = await getDocs(collection(db, 'Complaint'));
       const complaints: any[] = [];
-      snap.forEach(d => complaints.push(d.data()));
+      snap.forEach(d => {
+        const data = d.data();
+        const cid = Number(data.Complaint_ID || d.id);
+        const title = data.Title || data.title || 'เรื่องร้องเรียน';
+        const description = data.Description || data.description || '';
+        const adminResponse = data.Admin_Response || data.adminResponse || data.Resolution_Notes || '';
+        const status = data.Complaint_Status || data.status || 'Pending';
+        const date = data.Complaint_Date || data.Created_At || data.created_at || new Date().toISOString();
+        const customerId = data.Customer_ID || data.customerId;
+        const customerUsername = data.CustomerUsername || data.customerUsername || 'ลูกค้า';
+
+        // If user is Customer, filter to their complaints if Customer_ID is present
+        if (user && user.role === 'Customer' && customerId) {
+          if (String(customerId) !== String(user.id)) {
+            return;
+          }
+        }
+
+        complaints.push({
+          ...data,
+          Complaint_ID: cid,
+          Title: title,
+          title: title,
+          Description: description,
+          description: description,
+          Admin_Response: adminResponse,
+          adminResponse: adminResponse,
+          Resolution_Notes: adminResponse,
+          Complaint_Status: status,
+          status: status,
+          Complaint_Date: date,
+          Customer_ID: customerId || user?.id || 1,
+          CustomerUsername: customerUsername
+        });
+      });
       complaints.sort((a, b) => (b.Complaint_ID || 0) - (a.Complaint_ID || 0));
       return jsonResponse(complaints);
     }
     if (path === '/api/complaints' && method === 'POST') {
+      const user = getStoredUser(init);
       const id = Date.now();
-      await setDoc(doc(db, 'Complaint', String(id)), {
+      const title = body?.Title || body?.title || '';
+      const description = body?.Description || body?.description || '';
+      const nowIso = new Date().toISOString();
+
+      const newComplaint = {
         Complaint_ID: id,
-        ...body,
+        Customer_ID: user?.id || 1,
+        CustomerUsername: user?.username || (user?.FName ? `${user?.FName} ${user?.LName || ''}`.trim() : 'ลูกค้า'),
+        Title: title,
+        title: title,
+        Description: description,
+        description: description,
         Complaint_Status: 'Pending',
-        Complaint_Date: new Date().toISOString()
-      });
+        Complaint_Date: nowIso,
+        Admin_Response: '',
+        Created_At: nowIso
+      };
+
+      await setDoc(doc(db, 'Complaint', String(id)), newComplaint);
       return jsonResponse({ success: true, message: 'ส่งข้อร้องเรียนเรียบร้อย' });
     }
     const compResolveMatch = path.match(/^\/api\/complaints\/(\d+)$/);
     if (compResolveMatch && method === 'PATCH') {
       const id = compResolveMatch[1];
       const { status, adminResponse } = body || {};
+      const reply = adminResponse || body?.Admin_Response || '';
       await updateDoc(doc(db, 'Complaint', String(id)), {
         Complaint_Status: status || 'Resolved',
-        Resolution_Notes: adminResponse || '',
+        Admin_Response: reply,
+        adminResponse: reply,
+        Resolution_Notes: reply,
         Resolved_At: new Date().toISOString()
       });
       return jsonResponse({ success: true, message: 'ตอบกลับข้อร้องเรียนเรียบร้อย' });
@@ -1251,30 +1433,75 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
 
     // 28. Favorites
     if (path === '/api/favorites' && method === 'GET') {
+      const user = getStoredUser(init);
+      const userId = Number(user?.id) || 1;
       const snap = await getDocs(collection(db, 'FavoriteLot'));
-      const favs: any[] = [];
-      snap.forEach(d => favs.push(d.data()));
-      return jsonResponse(favs);
+      const lotSnap = await getDocs(collection(db, 'ParkingLot'));
+      const slotCounts = await getSlotCountsMap();
+
+      const lotMap = new Map<number, any>();
+      lotSnap.forEach(d => {
+        const lot = d.data();
+        const lid = Number(lot.Lot_ID);
+        const counts = slotCounts[lid] || { total: 10, available: 7 };
+        lotMap.set(lid, {
+          ...lot,
+          total_slots: counts.total,
+          available_slots: counts.available,
+          occupied_slots: Math.max(0, counts.total - counts.available)
+        });
+      });
+
+      const favLots: any[] = [];
+      snap.forEach(d => {
+        const fav = d.data();
+        if (Number(fav.Customer_ID) === userId) {
+          const lotData = lotMap.get(Number(fav.Lot_ID));
+          if (lotData) {
+            favLots.push({
+              ...lotData,
+              Favorite_ID: fav.Favorite_ID
+            });
+          }
+        }
+      });
+
+      favLots.sort((a, b) => (a.Lot_ID || 0) - (b.Lot_ID || 0));
+      return jsonResponse(favLots);
     }
     const favMatch = path.match(/^\/api\/favorites\/(\d+)$/);
     if (favMatch && method === 'POST') {
       const user = getStoredUser();
       const lotId = Number(favMatch[1]);
-      const favId = `${user?.id || 1}_${lotId}`;
+      const userId = Number(user?.id) || 1;
+      const favId = `${userId}_${lotId}`;
       await setDoc(doc(db, 'FavoriteLot', favId), {
         Favorite_ID: favId,
-        Customer_ID: user?.id || 1,
+        Customer_ID: userId,
         Lot_ID: lotId,
         Saved_Date: new Date().toISOString()
       });
-      return jsonResponse({ success: true });
+      return jsonResponse({ success: true, message: 'บันทึกเป็นลานโปรดแล้ว' });
     }
     if (favMatch && method === 'DELETE') {
       const user = getStoredUser();
       const lotId = Number(favMatch[1]);
-      const favId = `${user?.id || 1}_${lotId}`;
-      await deleteDoc(doc(db, 'FavoriteLot', favId));
-      return jsonResponse({ success: true });
+      const userId = Number(user?.id) || 1;
+      const favId = `${userId}_${lotId}`;
+      try {
+        await deleteDoc(doc(db, 'FavoriteLot', favId));
+      } catch (_) {}
+
+      try {
+        const qSnap = await getDocs(query(collection(db, 'FavoriteLot'), where('Lot_ID', '==', lotId)));
+        for (const d of qSnap.docs) {
+          if (Number(d.data().Customer_ID) === userId) {
+            await deleteDoc(d.ref);
+          }
+        }
+      } catch (_) {}
+
+      return jsonResponse({ success: true, message: 'ลบออกจากรายการโปรดแล้ว' });
     }
 
     // 29. Database Inspector Endpoints
@@ -1318,6 +1545,18 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
       const s = await getDocs(collection(db, entityName));
       const records: any[] = [];
       s.forEach(d => records.push(d.data()));
+
+      const pk = def.primaryKey;
+      records.sort((a, b) => {
+        const valA = a[pk];
+        const valB = b[pk];
+        const numA = Number(valA);
+        const numB = Number(valB);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return numA - numB;
+        }
+        return String(valA || '').localeCompare(String(valB || ''));
+      });
 
       const incoming = ER_RELATIONSHIPS.filter(r => r.toTable === entityName);
       const outgoing = ER_RELATIONSHIPS.filter(r => r.fromTable === entityName);

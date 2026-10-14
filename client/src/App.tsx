@@ -22,6 +22,7 @@ import { AdminUsers } from './pages/admin/AdminUsers';
 import { AdminComplaints } from './pages/admin/AdminComplaints';
 import { AdminReports } from './pages/admin/AdminReports';
 import { AdminDatabaseInspector } from './pages/admin/AdminDatabaseInspector';
+import { ToastContainer } from './lib/toast';
 import { User } from './types';
 
 export default function App() {
@@ -60,7 +61,7 @@ export default function App() {
 
         <main className="flex-1">
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Home user={user} />} />
             <Route path="/lots" element={<Lots user={user} />} />
             <Route path="/lots/:id" element={<LotDetail user={user} />} />
             <Route path="/booking/:slotId" element={<Booking user={user} />} />
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="/my/bookings" element={<MyBookings user={user} />} />
             <Route path="/my/bookings/:id" element={<TicketDetail user={user} />} />
             <Route path="/my/favorites" element={<Favorites user={user} />} />
+            <Route path="/favorites" element={<Favorites user={user} />} />
             <Route path="/my/complaints" element={<Complaints user={user} />} />
 
             {/* Auth */}
@@ -96,6 +98,7 @@ export default function App() {
         </main>
 
         <Footer />
+        <ToastContainer />
       </div>
     </BrowserRouter>
   );

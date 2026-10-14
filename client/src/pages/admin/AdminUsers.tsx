@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Users, 
   Building2, 
@@ -15,7 +15,16 @@ import {
   Lock,
   User as UserIcon,
   Phone,
-  Mail
+  Mail,
+  Calendar,
+  ChevronRight,
+  Clock,
+  MapPin,
+  RefreshCw,
+  Eye,
+  Receipt,
+  Check,
+  Filter
 } from 'lucide-react';
 import { formatThaiDateTime } from '../../lib/thai-time';
 
@@ -24,6 +33,13 @@ export function AdminUsers() {
   const [activeTab, setActiveTab] = useState<'customers' | 'owners'>('customers');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Customer Booking History Modal
+  const [historyCustomer, setHistoryCustomer] = useState<any | null>(null);
+  const [customerBookings, setCustomerBookings] = useState<any[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+  const [historySearchTerm, setHistorySearchTerm] = useState('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('ALL');
 
   // Add Customer Modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -56,6 +72,33 @@ export function AdminUsers() {
 
   // Feedback Notification Modal
   const [alertNotice, setAlertNotice] = useState<{ title: string; message: string; type: 'success' | 'error' } | null>(null);
+
+  const handleViewBookings = async (customer: any) => {
+    setHistoryCustomer(customer);
+    setLoadingBookings(true);
+    setHistorySearchTerm('');
+    setHistoryStatusFilter('ALL');
+    setCustomerBookings([]);
+
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`/api/admin/customers/${customer.id}/bookings`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.bookings)) {
+        setCustomerBookings(data.bookings);
+      } else if (Array.isArray(data)) {
+        setCustomerBookings(data);
+      } else if (Array.isArray(data?.records)) {
+        setCustomerBookings(data.records);
+      }
+    } catch (err) {
+      console.error('Error fetching customer bookings:', err);
+    } finally {
+      setLoadingBookings(false);
+    }
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -381,10 +424,17 @@ export function AdminUsers() {
                     </td>
                     {activeTab === 'customers' ? (
                       <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-100">
-                          <Car className="w-3 h-3 text-sky-500" />
-                          {u.totalBookings || 0} ครั้ง
-                        </span>
+                        <button
+                          onClick={() => handleViewBookings(u)}
+                          className="inline-flex items-center gap-1.5 font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 hover:text-sky-900 px-2.5 py-1 rounded-xl border border-sky-200 transition-all hover:scale-105 shadow-2xs group cursor-pointer"
+                          title="คลิกเพื่อดูประวัติการจองทั้งหมดของผู้ใช้นี้"
+                        >
+                          <Car className="w-3.5 h-3.5 text-sky-600 group-hover:scale-110 transition-transform" />
+                          <span>{u.totalBookings || 0} ครั้ง</span>
+                          <span className="text-[10px] text-sky-500 font-semibold opacity-80 group-hover:opacity-100 underline ml-0.5">
+                            ดูประวัติ
+                          </span>
+                        </button>
                       </td>
                     ) : (
                       <>
@@ -422,6 +472,16 @@ export function AdminUsers() {
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {activeTab === 'customers' && (
+                          <button
+                            onClick={() => handleViewBookings(u)}
+                            className="p-1.5 rounded-lg text-sky-700 bg-sky-50 hover:bg-sky-100 hover:text-sky-800 border border-sky-200 transition-all shadow-sm"
+                            title="ดูประวัติการจองของผู้ใช้นี้"
+                          >
+                            <Calendar className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
                         {activeTab === 'customers' && (
                           <button
                             onClick={() => handleOpenEdit(u)}
@@ -751,6 +811,313 @@ export function AdminUsers() {
                 className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md disabled:opacity-50"
               >
                 {isSubmittingDelete ? 'กำลังลบ...' : 'ยืนยันลบบัญชี'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: ประวัติการจองของลูกค้า (Customer Booking History Modal) */}
+      {historyCustomer && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setHistoryCustomer(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex items-start justify-between bg-gradient-to-r from-sky-50/70 via-white to-purple-50/40">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-sky-600 text-white flex items-center justify-center font-bold text-lg shadow-md shadow-sky-600/20 shrink-0">
+                  {historyCustomer.FName ? historyCustomer.FName.charAt(0) : 'U'}
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-extrabold text-base sm:text-lg text-slate-900">
+                      ประวัติการจองของ: {historyCustomer.FName} {historyCustomer.LName}
+                    </h3>
+                    <span className="font-mono text-[11px] font-bold text-sky-700 bg-sky-100/80 px-2 py-0.5 rounded-md">
+                      #{historyCustomer.id}
+                    </span>
+                    <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                      @{historyCustomer.Username}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
+                    {historyCustomer.Phone_Number && (
+                      <span className="flex items-center gap-1 font-mono">
+                        <Phone className="w-3 h-3 text-slate-400" />
+                        {historyCustomer.Phone_Number}
+                      </span>
+                    )}
+                    {historyCustomer.Email && (
+                      <span className="flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-slate-400" />
+                        {historyCustomer.Email}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setHistoryCustomer(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                title="ปิดหน้าต่าง"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Stats Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-4 sm:p-5 bg-slate-50/60 border-b border-slate-100 text-xs">
+              <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                <span className="text-slate-400 text-[11px] block font-medium">การจองทั้งหมด</span>
+                <span className="text-lg font-black text-slate-900 mt-0.5 block">{customerBookings.length} ครั้ง</span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                <span className="text-slate-400 text-[11px] block font-medium">ยอดชำระสะสม</span>
+                <span className="text-lg font-black text-emerald-600 mt-0.5 block">
+                  ฿{customerBookings.reduce((sum, b) => {
+                    if (['Confirmed', 'Checked_In', 'Completed'].includes(b.Reservation_Status)) {
+                      return sum + (Number(b.Totalfee) || Number(b.Base_Fee) || 0) + (Number(b.Overtime_Penalty) || 0) + (Number(b.Late_Penalty) || 0);
+                    }
+                    return sum;
+                  }, 0).toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                <span className="text-slate-400 text-[11px] block font-medium">เสร็จสิ้นแล้ว</span>
+                <span className="text-lg font-black text-sky-600 mt-0.5 block">
+                  {customerBookings.filter(b => b.Reservation_Status === 'Completed').length} รายการ
+                </span>
+              </div>
+              <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                <span className="text-slate-400 text-[11px] block font-medium">กำลังจอด / รอเข้าจอด</span>
+                <span className="text-lg font-black text-amber-600 mt-0.5 block">
+                  {customerBookings.filter(b => ['Confirmed', 'Checked_In'].includes(b.Reservation_Status)).length} รายการ
+                </span>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="ค้นหารหัสจอง, ลานจอด, ทะเบียนรถ, โซน..."
+                  value={historySearchTerm}
+                  onChange={e => setHistorySearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-sky-500"
+                />
+                {historySearchTerm && (
+                  <button
+                    onClick={() => setHistorySearchTerm('')}
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none text-[11px] font-semibold">
+                {[
+                  { id: 'ALL', label: 'ทั้งหมด' },
+                  { id: 'Confirmed', label: 'จองสำเร็จ' },
+                  { id: 'Checked_In', label: 'กำลังจอด' },
+                  { id: 'Completed', label: 'เสร็จสิ้น' },
+                  { id: 'Pending_Payment', label: 'รอชำระเงิน' },
+                  { id: 'Cancelled', label: 'ยกเลิก' }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setHistoryStatusFilter(tab.id)}
+                    className={`px-2.5 py-1 rounded-lg transition-all shrink-0 ${
+                      historyStatusFilter === tab.id
+                        ? 'bg-sky-600 text-white font-bold shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Bookings List Content */}
+            <div className="overflow-y-auto flex-1 p-4 sm:p-5 space-y-3">
+              {loadingBookings ? (
+                <div className="p-12 text-center text-slate-400 space-y-2">
+                  <RefreshCw className="w-6 h-6 mx-auto animate-spin text-sky-600" />
+                  <p className="text-xs">กำลังโหลดประวัติการจองของผู้ใช้...</p>
+                </div>
+              ) : customerBookings.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 space-y-2 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                  <Calendar className="w-10 h-10 mx-auto text-slate-300" />
+                  <p className="text-sm font-bold text-slate-600">ยังไม่มีประวัติการจองสำหรับผู้ใช้นี้</p>
+                  <p className="text-xs text-slate-400">เมื่อลูกค้ารายนี้ทำการจองช่องจอด รายการจองจะแสดงขึ้นที่นี่โดยอัตโนมัติ</p>
+                </div>
+              ) : (
+                (() => {
+                  const filtered = customerBookings.filter(b => {
+                    if (historyStatusFilter !== 'ALL') {
+                      const bStatus = (b.Reservation_Status || '').toLowerCase();
+                      if (bStatus !== historyStatusFilter.toLowerCase()) return false;
+                    }
+                    if (historySearchTerm.trim()) {
+                      const term = historySearchTerm.trim().toLowerCase();
+                      const matchId = String(b.Booking_ID || '').toLowerCase().includes(term);
+                      const matchLot = String(b.LotName || '').toLowerCase().includes(term);
+                      const matchPlate = String(b.LicensePlate || '').toLowerCase().includes(term);
+                      const matchSlot = String(b.SpaceCode || '').toLowerCase().includes(term);
+                      return matchId || matchLot || matchPlate || matchSlot;
+                    }
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="p-8 text-center text-slate-400 space-y-1">
+                        <p className="text-xs font-semibold text-slate-600">ไม่พบรายการจองที่ตรงกับเงื่อนไขการค้นหา</p>
+                        <p className="text-[11px] text-slate-400">ลองล้างคำค้นหาหรือเลือกสถานะอื่น</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-3">
+                      {filtered.map((b, idx) => {
+                        const st = b.Reservation_Status || 'Pending_Payment';
+                        let stBadge = "bg-slate-100 text-slate-700 border-slate-200";
+                        let stLabel = st;
+                        if (st === 'Confirmed') {
+                          stBadge = "bg-emerald-50 text-emerald-700 border-emerald-200 font-bold";
+                          stLabel = "ยืนยันแล้ว (รอเข้าจอด)";
+                        } else if (st === 'Checked_In') {
+                          stBadge = "bg-sky-50 text-sky-700 border-sky-200 font-bold";
+                          stLabel = "กำลังเข้าจอด";
+                        } else if (st === 'Completed') {
+                          stBadge = "bg-slate-100 text-slate-800 border-slate-300 font-bold";
+                          stLabel = "เสร็จสิ้นการจอด";
+                        } else if (st === 'Pending_Payment') {
+                          stBadge = "bg-amber-50 text-amber-800 border-amber-200 font-bold";
+                          stLabel = "รอชำระเงิน";
+                        } else if (st === 'Cancelled') {
+                          stBadge = "bg-rose-50 text-rose-700 border-rose-200 font-bold";
+                          stLabel = "ยกเลิกแล้ว";
+                        }
+
+                        const fee = Number(b.Totalfee) || Number(b.Base_Fee) || 0;
+                        const penalty = (Number(b.Overtime_Penalty) || 0) + (Number(b.Late_Penalty) || 0);
+
+                        return (
+                          <div 
+                            key={idx} 
+                            className="p-4 rounded-2xl bg-white border border-slate-200/80 hover:border-sky-300 hover:shadow-md transition-all space-y-3"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-xs bg-sky-50 text-sky-800 border border-sky-200/80 px-2.5 py-1 rounded-xl">
+                                  #{b.Booking_ID}
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  {b.Created_At ? formatThaiDateTime(b.Created_At) : b.ReserveDate ? formatThaiDateTime(b.ReserveDate) : '-'}
+                                </span>
+                              </div>
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] border self-start sm:self-auto ${stBadge}`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+                                {stLabel}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                              {/* Lot & Slot */}
+                              <div className="space-y-1">
+                                <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                                  <Building2 className="w-3 h-3 text-slate-400" />
+                                  ลานจอดและช่องจอด
+                                </span>
+                                <div className="font-bold text-slate-800 text-xs">
+                                  {b.LotName || 'ลานจอดรถในระบบ'}
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-mono">
+                                  ช่อง: <strong className="text-sky-700">{b.SpaceCode || '-'}</strong> {b.Floor ? `• ชั้น ${b.Floor}` : ''} {b.Zone ? `• โซน ${b.Zone}` : ''}
+                                </div>
+                              </div>
+
+                              {/* Time & Vehicle */}
+                              <div className="space-y-1">
+                                <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                                  <Car className="w-3 h-3 text-slate-400" />
+                                  ยานพาหนะและเวลา
+                                </span>
+                                <div className="font-bold text-slate-800 text-xs font-mono">
+                                  {b.LicensePlate || '-'}
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-mono">
+                                  {b.Expected_Arrival ? formatThaiDateTime(b.Expected_Arrival) : '-'}
+                                  {b.Booked_Hours ? ` (${b.Booked_Hours} ชม.)` : ''}
+                                </div>
+                              </div>
+
+                              {/* Payment & Fees */}
+                              <div className="space-y-1 sm:text-right">
+                                <span className="text-[11px] text-slate-400 font-medium flex sm:justify-end items-center gap-1">
+                                  <CreditCard className="w-3 h-3 text-slate-400" />
+                                  ยอดชำระ
+                                </span>
+                                <div className="font-black text-slate-900 text-sm">
+                                  ฿{fee.toLocaleString()}
+                                </div>
+                                {penalty > 0 && (
+                                  <div className="text-[11px] text-rose-600 font-medium">
+                                    + ค่าปรับ ฿{penalty.toLocaleString()}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Extra scan info or QR Token if available */}
+                            {(b.Actual_Check_In || b.Actual_Check_Out || b.QRToken) && (
+                              <div className="pt-2 border-t border-slate-50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 font-mono">
+                                <div className="flex items-center gap-3">
+                                  {b.Actual_Check_In && (
+                                    <span>เข้าจอดจริง: {formatThaiDateTime(b.Actual_Check_In)}</span>
+                                  )}
+                                  {b.Actual_Check_Out && (
+                                    <span>ออกจริง: {formatThaiDateTime(b.Actual_Check_Out)}</span>
+                                  )}
+                                </div>
+                                {b.QRToken && (
+                                  <span className="bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 text-[10px]">
+                                    Token: {b.QRToken}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                พบประวัติการจองทั้งหมด <strong>{customerBookings.length}</strong> รายการ
+              </span>
+              <button
+                onClick={() => setHistoryCustomer(null)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs shadow-sm transition-all"
+              >
+                ปิดหน้าต่าง
               </button>
             </div>
           </div>

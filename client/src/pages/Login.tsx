@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, User as UserIcon, ShieldAlert, ArrowRight, ShieldCheck, Building2, UserCheck, Eye, EyeOff } from 'lucide-react';
+import { Lock, User as UserIcon, ShieldAlert, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { User } from '../types';
 
 interface LoginProps {
@@ -94,12 +94,6 @@ export function Login({ onLoginSuccess }: LoginProps) {
     }
   };
 
-  const handleQuickLogin = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setError('');
-    handleLogin(undefined, u, p);
-  };
 
   return (
     <div className="max-w-md mx-auto px-4 py-12 space-y-6">
@@ -198,50 +192,7 @@ export function Login({ onLoginSuccess }: LoginProps) {
           </button>
         </form>
 
-        {/* 1-Click Demo Accounts Quick Picker */}
-        <div className="pt-4 border-t border-slate-100 space-y-2">
-          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider text-center">
-            ⚡ เลือกล็อกอินทันที (Quick Access)
-          </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('customer1', 'cust123')}
-              className="p-2.5 text-left rounded-xl border border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100 text-xs font-medium text-emerald-900 transition-all flex flex-col justify-between"
-            >
-              <div className="flex items-center gap-1 mb-1">
-                <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="font-bold text-[11px]">ลูกค้า 1</span>
-              </div>
-              <span className="text-[10px] text-emerald-700 font-mono">customer1</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('owner1', 'owner123')}
-              className="p-2.5 text-left rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100 text-xs font-medium text-amber-900 transition-all flex flex-col justify-between"
-            >
-              <div className="flex items-center gap-1 mb-1">
-                <Building2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="font-bold text-[11px]">เจ้าของลาน</span>
-              </div>
-              <span className="text-[10px] text-amber-700 font-mono">owner1</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('admin', 'admin123')}
-              className="p-2.5 text-left rounded-xl border border-purple-200 bg-purple-50/60 hover:bg-purple-100 text-xs font-medium text-purple-900 transition-all flex flex-col justify-between"
-            >
-              <div className="flex items-center gap-1 mb-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                <span className="font-bold text-[11px]">แอดมิน</span>
-              </div>
-              <span className="text-[10px] text-purple-700 font-mono">admin</span>
-            </button>
-          </div>
-        </div>
 
         <div className="text-center text-xs text-slate-500 pt-2">
           ยังไม่มีบัญชีใช้งาน?{' '}

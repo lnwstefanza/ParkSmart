@@ -28,6 +28,7 @@ import confetti from 'canvas-confetti';
 import { ReservationItem } from '../types';
 import { formatThaiDateTime, getOvertimeSummary } from '../lib/thai-time';
 import promptpayQrImg from '../assets/promptpay-qr.jpg';
+import { toast } from '../lib/toast';
 
 export function Payment() {
   const { id } = useParams<{ id: string }>();
@@ -164,11 +165,13 @@ export function Payment() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    toast.info('ดาวน์โหลด QR Code สำหรับโอนเงินแล้ว');
   };
 
   const handleCopyRef = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
+    toast.success('คัดลอกรหัสอ้างอิงสำเร็จแล้ว!');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -178,6 +181,7 @@ export function Payment() {
       const reader = new FileReader();
       reader.onload = () => {
         setSlipImage(reader.result as string);
+        toast.success('แนบหลักฐานสลิปโอนเงินเรียบร้อย');
       };
       reader.readAsDataURL(file);
     }
@@ -205,6 +209,7 @@ export function Payment() {
 
       if (res.ok) {
         setSuccess(true);
+        toast.success('ชำระเงินสำเร็จแล้ว! กำลังออก E-Ticket...');
         confetti({
           particleCount: 120,
           spread: 80,
@@ -215,11 +220,11 @@ export function Payment() {
           navigate(`/my/bookings/${id}`);
         }, 1800);
       } else {
-        alert(data.error || 'เกิดข้อผิดพลาดในการชำระเงิน กรุณาลองใหม่อีกครั้ง');
+        toast.error(data.error || 'เกิดข้อผิดพลาดในการชำระเงิน กรุณาลองใหม่อีกครั้ง');
       }
     } catch (err: any) {
       console.error(err);
-      alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง');
+      toast.error('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setPaying(false);
     }

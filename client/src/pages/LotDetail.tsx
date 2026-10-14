@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { MapPin, Clock, Calendar, ShieldAlert, Sparkles, ArrowLeft, CheckCircle2, AlertTriangle, Navigation, Lock, LogIn, X } from 'lucide-react';
+import { 
+  MapPin, Clock, Calendar, ShieldAlert, Sparkles, ArrowLeft, 
+  CheckCircle2, AlertTriangle, Navigation, Lock, LogIn, X, Car, Check, ChevronRight, Layers, DollarSign, Heart 
+} from 'lucide-react';
 import { ParkingLot, ParkingSlot, User } from '../types';
 import { formatThai24hTime } from '../lib/thai-time';
 import { getGoogleMapsUrl } from '../lib/utils';
 import { ThaiDatePicker } from '../components/ThaiDatePicker';
 import { ThaiTimePicker } from '../components/ThaiTimePicker';
+import { toast } from '../lib/toast';
 
 interface LotDetailProps {
   user: User | null;
@@ -18,9 +22,53 @@ export function LotDetail({ user }: LotDetailProps) {
   const [lot, setLot] = useState<ParkingLot | null>(null);
   const [slots, setSlots] = useState<ParkingSlot[]>([]);
   const [selectedFloor, setSelectedFloor] = useState<string>('');
+  const [selectedZone, setSelectedZone] = useState<string>('ALL');
   const [selectedSlot, setSelectedSlot] = useState<ParkingSlot | null>(null);
   const [loading, setLoading] = useState(true);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !id) return;
+    fetch('/api/favorites', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then((data: ParkingLot[]) => {
+        if (Array.isArray(data)) {
+          setIsFavorite(data.some(l => String(l.Lot_ID) === String(id)));
+        }
+      })
+      .catch(() => {});
+  }, [id, user]);
+
+  const toggleFavorite = async () => {
+    if (!user) {
+      toast.error('กรุณาเข้าสู่ระบบก่อนบันทึกลานโปรด');
+      return;
+    }
+    const token = localStorage.getItem('token');
+    try {
+      if (isFavorite) {
+        await fetch(`/api/favorites/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setIsFavorite(false);
+        toast.info(`นำ "${lot?.LotName || 'ลานจอด'}" ออกจากรายการโปรดแล้ว`);
+      } else {
+        await fetch(`/api/favorites/${id}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setIsFavorite(true);
+        toast.favorite(`บันทึก "${lot?.LotName || 'ลานจอด'}" ในรายการโปรดแล้ว ❤️`);
+      }
+    } catch {
+      toast.error('ไม่สามารถอัปเดตรายการโปรดได้');
+    }
+  };
 
   // Date and Time selection (Bangkok date)
   const todayStr = (() => {
@@ -149,9 +197,14 @@ export function LotDetail({ user }: LotDetailProps) {
     );
   }
 
-  // Floors list
+  // Floors and zones list
   const floors = Array.from(new Set(slots.map(s => s.Floor)));
   const currentFloorSlots = slots.filter(s => s.Floor === selectedFloor);
+  const zonesOnFloor = Array.from(new Set(currentFloorSlots.map(s => s.Zone)));
+  const displayedSlots = selectedZone === 'ALL'
+    ? currentFloorSlots
+    : currentFloorSlots.filter(s => s.Zone === selectedZone);
+  const estimatedFee = (lot?.FeeRate_Per_Hour || 0) * selectedDuration;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -185,9 +238,26 @@ export function LotDetail({ user }: LotDetailProps) {
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              {lot.LotName}
-            </h1>
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                {lot.LotName}
+              </h1>
+              {(!user || user.role === 'Customer') && (
+                <button
+                  type="button"
+                  onClick={toggleFavorite}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all active:scale-95 shrink-0 ${
+                    isFavorite
+                      ? 'bg-rose-50 border-rose-200 text-rose-600 shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:text-rose-500 hover:border-rose-200 shadow-xs'
+                  }`}
+                  title={isFavorite ? 'ลบออกจากลานโปรด' : 'บันทึกเป็นลานโปรด'}
+                >
+                  <Heart className={`w-4 h-4 ${isFavorite ? 'fill-rose-500 text-rose-500' : ''}`} />
+                  <span>{isFavorite ? 'ลานโปรดของคุณ' : 'เพิ่มในลานโปรด'}</span>
+                </button>
+              )}
+            </div>
 
             <div className="flex flex-wrap items-center gap-3 mt-2">
               <p className="text-sm text-slate-500 flex items-center gap-1.5">
@@ -342,53 +412,105 @@ export function LotDetail({ user }: LotDetailProps) {
           </div>
         </div>
 
-        {/* Floor Selection Tabs */}
-        {floors.length > 1 && (
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-2 overflow-x-auto">
-            {floors.map(fl => (
+        {/* Floor Selection Tabs & Zone Filter Chips */}
+        <div className="space-y-3 border-b border-slate-100 pb-4">
+          {floors.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                <Layers className="w-3.5 h-3.5" /> ชั้น:
+              </span>
+              {floors.map(fl => (
+                <button
+                  key={fl}
+                  onClick={() => {
+                    setSelectedFloor(fl);
+                    setSelectedZone('ALL');
+                  }}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all shrink-0 ${
+                    selectedFloor === fl
+                      ? 'bg-sky-600 text-white shadow-md shadow-sky-600/20'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  ชั้น {fl}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Zone Chips on the Current Floor */}
+          {zonesOnFloor.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-xs text-slate-400 font-bold uppercase mr-1">โซน:</span>
               <button
-                key={fl}
-                onClick={() => setSelectedFloor(fl)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                  selectedFloor === fl
-                    ? 'bg-sky-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100'
+                onClick={() => setSelectedZone('ALL')}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                  selectedZone === 'ALL'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                ชั้น {fl}
+                ทุกโซน ({currentFloorSlots.length})
               </button>
-            ))}
-          </div>
-        )}
+              {zonesOnFloor.map(z => {
+                const count = currentFloorSlots.filter(s => s.Zone === z).length;
+                const availCount = currentFloorSlots.filter(s => s.Zone === z && s.ParkingSlot_Status === 'Available').length;
+                return (
+                  <button
+                    key={z}
+                    onClick={() => setSelectedZone(z)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      selectedZone === z
+                        ? 'bg-sky-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{z}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      selectedZone === z ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      ว่าง {availCount}/{count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Slot Grid Map */}
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3.5 pt-2">
-          {currentFloorSlots.map(slot => {
+          {displayedSlots.map(slot => {
             const isAvailable = slot.ParkingSlot_Status === 'Available';
             const isSelected = selectedSlot?.Slot_ID === slot.Slot_ID;
 
             let cardStyle = "bg-white border-emerald-300/80 text-emerald-950 hover:border-emerald-500 hover:bg-emerald-50/60 hover:shadow-md hover:-translate-y-0.5 cursor-pointer shadow-sm";
             let badgeStyle = "bg-emerald-100 text-emerald-800 font-bold";
             let statusText = "ว่าง";
+            let icon = <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />;
 
             if (slot.ParkingSlot_Status === 'Reserved') {
               cardStyle = "bg-amber-50/60 border-amber-200 text-amber-900 cursor-not-allowed opacity-85";
               badgeStyle = "bg-amber-100/90 text-amber-800 font-semibold";
               statusText = "ติดจอง";
+              icon = <Clock className="w-2.5 h-2.5 text-amber-600" />;
             } else if (slot.ParkingSlot_Status === 'Occupied') {
               cardStyle = "bg-rose-50/60 border-rose-200 text-rose-900 cursor-not-allowed opacity-85";
               badgeStyle = "bg-rose-100/90 text-rose-800 font-semibold";
               statusText = "มีรถจอด";
+              icon = <Car className="w-2.5 h-2.5 text-rose-600" />;
             } else if (slot.ParkingSlot_Status === 'Maintenance') {
               cardStyle = "bg-slate-100/80 border-slate-200 text-slate-500 cursor-not-allowed opacity-60";
               badgeStyle = "bg-slate-200 text-slate-600 font-medium";
               statusText = "ปิดซ่อม";
+              icon = <AlertTriangle className="w-2.5 h-2.5 text-slate-500" />;
             }
 
             if (isSelected) {
               cardStyle = "bg-gradient-to-br from-sky-600 to-sky-700 border-sky-600 text-white shadow-xl shadow-sky-600/25 ring-4 ring-sky-300/60 -translate-y-1 scale-105 z-10";
               badgeStyle = "bg-white/20 text-white font-bold backdrop-blur-sm";
               statusText = "เลือกแล้ว ✓";
+              icon = <Check className="w-2.5 h-2.5 text-white" />;
             }
 
             return (
@@ -396,7 +518,7 @@ export function LotDetail({ user }: LotDetailProps) {
                 key={slot.Slot_ID}
                 disabled={!isAvailable}
                 onClick={() => handleSelectSlot(slot)}
-                className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-between min-h-[92px] transition-all duration-200 relative overflow-hidden ${cardStyle}`}
+                className={`p-3 rounded-2xl border-2 flex flex-col items-center justify-between min-h-[96px] transition-all duration-200 relative overflow-hidden ${cardStyle}`}
               >
                 {/* Visual Top Lane Marker */}
                 <div className={`w-8 h-1 rounded-full mb-1.5 ${isSelected ? 'bg-white/40' : 'bg-slate-300/60'}`} />
@@ -409,8 +531,9 @@ export function LotDetail({ user }: LotDetailProps) {
                   {slot.SpaceCode}
                 </span>
 
-                <span className={`text-[10px] px-2 py-0.5 rounded-full mt-1 whitespace-nowrap ${badgeStyle}`}>
-                  {statusText}
+                <span className={`text-[10px] px-2 py-0.5 rounded-full mt-1 whitespace-nowrap flex items-center gap-1 ${badgeStyle}`}>
+                  {icon}
+                  <span>{statusText}</span>
                 </span>
               </button>
             );
@@ -438,24 +561,71 @@ export function LotDetail({ user }: LotDetailProps) {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <button
-                onClick={() => setSelectedSlot(null)}
-                className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200/50 transition-colors"
-              >
-                ยกเลิกการเลือก
-              </button>
-              <button
-                onClick={handleProceedBooking}
-                className="flex-1 sm:flex-initial px-6 py-2.5 bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-sky-300 transition-all flex items-center justify-center gap-2"
-              >
-                <span>ดำเนินการจองช่องนี้</span>
-                <CheckCircle2 className="w-4 h-4" />
-              </button>
+            <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+              <div className="text-right sm:text-left hidden md:block">
+                <div className="text-[11px] text-slate-500 font-medium">ค่าจอดโดยประมาณ</div>
+                <div className="text-lg font-black text-sky-700">
+                  ฿{estimatedFee}{' '}
+                  <span className="text-xs font-normal text-slate-500">
+                    ({selectedDuration} ชม.)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => setSelectedSlot(null)}
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200/50 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={handleProceedBooking}
+                  className="flex-1 sm:flex-initial px-6 py-2.5 bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-sky-300 transition-all flex items-center justify-center gap-2"
+                >
+                  <span>ดำเนินการจองช่องนี้</span>
+                  <CheckCircle2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Sticky Floating Bottom Dock when slot is selected */}
+      {selectedSlot && (
+        <div className="fixed bottom-4 left-4 right-4 z-40 max-w-3xl mx-auto bg-slate-900/95 backdrop-blur-lg text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border border-white/10 flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-center gap-3">
+            <div className="h-10 px-3 rounded-xl bg-sky-500 text-white font-black text-base flex items-center justify-center shadow-md shrink-0">
+              {selectedSlot.SpaceCode}
+            </div>
+            <div className="text-left">
+              <p className="text-xs font-bold text-white">
+                ชั้น {selectedSlot.Floor} • โซน {selectedSlot.Zone}
+              </p>
+              <p className="text-[11px] text-sky-300">
+                {formatDateDisplay(selectedDate)} ({selectedTime} - {endTimeStr} น. • ฿{estimatedFee})
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setSelectedSlot(null)}
+              className="p-2 text-xs text-slate-400 hover:text-white transition-colors"
+              title="ยกเลิกการเลือก"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleProceedBooking}
+              className="px-4 py-2 sm:px-5 sm:py-2.5 bg-sky-500 hover:bg-sky-400 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg shadow-sky-500/30 transition-all flex items-center gap-1.5"
+            >
+              <span>จองช่องนี้</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Login Required Modal Popup */}
       {showLoginModal && (

@@ -71,62 +71,69 @@ export function AdminComplaints() {
         </div>
       ) : (
         <div className="space-y-4">
-          {complaints.map(c => (
-            <div key={c.Complaint_ID} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <h3 className="font-bold text-base text-slate-900">{c.Title}</h3>
-                  <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                    <span>ผู้ร้องเรียน: <strong>{c.CustomerUsername}</strong></span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      {formatThaiDateTime(c.Complaint_Date)}
-                    </span>
+          {complaints.map(c => {
+            const compTitle = c.Title || (c as any).title || 'เรื่องร้องเรียน';
+            const compDesc = c.Description || (c as any).description || 'ไม่มีรายละเอียดเพิ่มเติม';
+            const compUser = c.CustomerUsername || (c as any).customerUsername || 'ลูกค้า';
+            const compReply = c.Admin_Response || (c as any).adminResponse || (c as any).Resolution_Notes;
+
+            return (
+              <div key={c.Complaint_ID} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-bold text-base text-slate-900">{compTitle}</h3>
+                    <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                      <span>ผู้ร้องเรียน: <strong>{compUser}</strong></span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                        {formatThaiDateTime(c.Complaint_Date)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    {c.Complaint_Status === 'Pending' && (
+                      <span className="text-xs font-bold bg-amber-100 text-amber-800 px-3 py-1 rounded-lg">
+                        รอดำเนินการ
+                      </span>
+                    )}
+                    {c.Complaint_Status === 'Resolved' && (
+                      <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-lg">
+                        แก้ไขแล้ว
+                      </span>
+                    )}
+                    {c.Complaint_Status === 'Rejected' && (
+                      <span className="text-xs font-bold bg-rose-100 text-rose-800 px-3 py-1 rounded-lg">
+                        ปฏิเสธ
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div>
-                  {c.Complaint_Status === 'Pending' && (
-                    <span className="text-xs font-bold bg-amber-100 text-amber-800 px-3 py-1 rounded-lg">
-                      รอดำเนินการ
-                    </span>
-                  )}
-                  {c.Complaint_Status === 'Resolved' && (
-                    <span className="text-xs font-bold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-lg">
-                      แก้ไขแล้ว
-                    </span>
-                  )}
-                  {c.Complaint_Status === 'Rejected' && (
-                    <span className="text-xs font-bold bg-rose-100 text-rose-800 px-3 py-1 rounded-lg">
-                      ปฏิเสธ
-                    </span>
-                  )}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-700 leading-relaxed">
+                  {compDesc}
                 </div>
-              </div>
 
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-700 leading-relaxed">
-                {c.Description}
+                {compReply ? (
+                  <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 text-xs text-sky-950 space-y-1">
+                    <strong className="block text-[11px] text-sky-800">คำตอบกลับของคุณ:</strong>
+                    <p>{compReply}</p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setSelectedComplaint(c);
+                      setAdminReply('');
+                    }}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all"
+                  >
+                    ตอบกลับและปรับสถานะ
+                  </button>
+                )}
               </div>
-
-              {c.Admin_Response ? (
-                <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 text-xs text-sky-950 space-y-1">
-                  <strong className="block text-[11px] text-sky-800">คำตอบกลับของคุณ:</strong>
-                  <p>{c.Admin_Response}</p>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    setSelectedComplaint(c);
-                    setAdminReply('');
-                  }}
-                  className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all"
-                >
-                  ตอบกลับและปรับสถานะ
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -52,7 +52,12 @@ export function Complaints({ user }: ComplaintsProps) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ title, description })
+        body: JSON.stringify({
+          title,
+          Title: title,
+          description,
+          Description: description
+        })
       });
 
       if (res.ok) {
@@ -140,44 +145,50 @@ export function Complaints({ user }: ComplaintsProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {complaints.map(c => (
-                <div key={c.Complaint_ID} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-sm text-slate-900">{c.Title}</h3>
-                    {c.Complaint_Status === 'Pending' && (
-                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md">
-                        รอดำเนินการ
-                      </span>
-                    )}
-                    {c.Complaint_Status === 'Resolved' && (
-                      <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
-                        แก้ไขแล้ว
-                      </span>
-                    )}
-                    {c.Complaint_Status === 'Rejected' && (
-                      <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-md">
-                        ปฏิเสธ
-                      </span>
-                    )}
-                  </div>
+              {complaints.map(c => {
+                const compTitle = c.Title || (c as any).title || 'เรื่องร้องเรียน';
+                const compDesc = c.Description || (c as any).description || 'ไม่มีรายละเอียดเพิ่มเติม';
+                const adminReply = c.Admin_Response || (c as any).adminResponse || (c as any).Resolution_Notes;
 
-                  <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    {c.Description}
-                  </p>
-
-                  {c.Admin_Response && (
-                    <div className="bg-sky-50 p-3 rounded-xl border border-sky-100 text-xs space-y-1">
-                      <strong className="text-sky-800 block text-[11px]">การตอบกลับจากผู้ดูแลระบบ:</strong>
-                      <p className="text-slate-700">{c.Admin_Response}</p>
+                return (
+                  <div key={c.Complaint_ID} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-sm text-slate-900">{compTitle}</h3>
+                      {c.Complaint_Status === 'Pending' && (
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md">
+                          รอดำเนินการ
+                        </span>
+                      )}
+                      {c.Complaint_Status === 'Resolved' && (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
+                          แก้ไขแล้ว
+                        </span>
+                      )}
+                      {c.Complaint_Status === 'Rejected' && (
+                        <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-md">
+                          ปฏิเสธ
+                        </span>
+                      )}
                     </div>
-                  )}
 
-                  <div className="text-[10px] text-slate-400 flex items-center gap-1 pt-1">
-                    <Clock className="w-3 h-3" />
-                    ส่งเมื่อ: {formatThaiDateTime(c.Complaint_Date)}
+                    <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                      {compDesc}
+                    </p>
+
+                    {adminReply && (
+                      <div className="bg-sky-50 p-3 rounded-xl border border-sky-100 text-xs space-y-1">
+                        <strong className="text-sky-800 block text-[11px]">การตอบกลับจากผู้ดูแลระบบ:</strong>
+                        <p className="text-slate-700">{adminReply}</p>
+                      </div>
+                    )}
+
+                    <div className="text-[10px] text-slate-400 flex items-center gap-1 pt-1">
+                      <Clock className="w-3 h-3" />
+                      ส่งเมื่อ: {formatThaiDateTime(c.Complaint_Date)}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
