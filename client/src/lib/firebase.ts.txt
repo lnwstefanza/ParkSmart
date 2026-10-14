@@ -1,0 +1,39 @@
+ import { initializeApp } from 'firebase/app';
+    import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+    import { getFirestore } from 'firebase/firestore';
+    import { getStorage } from 'firebase/storage';
+
+    // นำค่า Config ที่ได้จาก Firebase Console มาวางตรงนี้
+    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAKAYWDCV0IfAK0rinieCmLh0oDwfnRJv0",
+  authDomain: "parksmart-fb86b.firebaseapp.com",
+  projectId: "parksmart-fb86b",
+  storageBucket: "parksmart-fb86b.firebasestorage.app",
+  messagingSenderId: "509047033537",
+  appId: "1:509047033537:web:ec4c7681d7a67930328e40",
+  measurementId: "G-B29N6BXXYM"
+};
+
+    // เริ่มต้นการเชื่อมต่อ
+    const app = initializeApp(firebaseConfig);
+
+    // Export Service ต่างๆ ที่ต้องการใช้งาน
+    export const auth = getAuth(app);
+    export const googleProvider = new GoogleAuthProvider();
+    export const db = getFirestore(app);
+    export const storage = getStorage(app);
+
+  4. ตัวอย่างการนำไปใช้งานในหน้าเว็บ (เช่น Login ด้วย Google):
+     import { signInWithPopup } from 'firebase/auth';
+     import { auth, googleProvider } from '../lib/firebase';
+
+     const handleGoogleLogin = async () => {
+       try {
+         const result = await signInWithPopup(auth, googleProvider);
+         const user = result.user;
+         console.log('ล็อกอินสำเร็จ:', user.displayName, user.email);
+        } catch (error) {
+          console.error('เกิดข้อผิดพลาด:', error);
+        }
+      };

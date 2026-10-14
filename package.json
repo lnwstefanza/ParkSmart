@@ -1,0 +1,16 @@
+{
+  "name": "parksmart-system",
+  "version": "1.0.0",
+  "description": "ParkSmart — ระบบจองที่จอดรถออนไลน์ (Car Parking Reservation System)",
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "npm run build --prefix client",
+    "dev:server": "node --watch server/index.js",
+    "dev:client": "npm run dev --prefix client",
+    "dev": "node server/index.js",
+    "deploy": "npm run build && firebase deploy --only hosting"
+  },
+  "keywords": ["parking", "reservation", "khon-kaen", "express", "react"],
+  "author": "ParkSmart Team",
+  "license": "ISC"
+}
