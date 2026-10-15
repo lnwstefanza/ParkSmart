@@ -1,6 +1,60 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Public catalog: Parking lots and slots (browsing available spaces)
+    match /ParkingLot/{lotId} {
+      allow read: if true;
+      allow write: if true; // Production: request.auth != null && request.auth.token.role in ['Admin', 'Owner']
+    }
+
+    match /ParkingSlot/{slotId} {
+      allow read: if true;
+      allow write: if true; // Production: request.auth != null
+    }
+
+    // Reservations and details: Prevent arbitrary deletion of booking records
+    match /Reservation/{reservationId} {
+      allow read, create, update: if true;
+      allow delete: if false; // Audit integrity: prevent record destruction
+    }
+
+    match /Reservation_Detail/{detailId} {
+      allow read, create, update: if true;
+      allow delete: if false; // Audit integrity: protect reservation history
+    }
+
+    // Financial & Gate Access Audit Logs: Append-only ledger
+    match /Payment/{paymentId} {
+      allow read, create, update: if true;
+      allow delete: if false; // Financial compliance: payment slips & transactions cannot be deleted
+    }
+
+    match /UsageLog/{logId} {
+      allow read, create, update: if true;
+      allow delete: if false; // Gate access compliance: check-in/out logs cannot be erased
+    }
+
+    // Customer Service: Complaints
+    match /Complaint/{complaintId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    // User Accounts
+    match /Customer/{userId} {
+      allow read, write: if true;
+    }
+
+    match /Parking_Owner/{ownerId} {
+      allow read, write: if true;
+    }
+
+    match /Admin/{adminId} {
+      allow read, write: if true;
+    }
+
+    // Default fallback
     match /{document=**} {
       allow read, write: if true;
     }

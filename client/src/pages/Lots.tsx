@@ -397,7 +397,7 @@ export function Lots({ user }: LotsProps) {
                         to={`/lots/${lot.Lot_ID}`}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-sm font-semibold bg-sky-50 text-sky-700 hover:bg-sky-600 hover:text-white transition-all duration-200 shadow-2xs"
                       >
-                        <span>ดูแผนผังและจอง</span>
+                        <span>{user?.role === 'Owner' || user?.role === 'Admin' ? 'ดูแผนผังลานจอด' : 'ดูแผนผังและจอง'}</span>
                         <ChevronRight className="w-4 h-4" />
                       </Link>
                     </div>

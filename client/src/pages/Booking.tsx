@@ -59,6 +59,11 @@ export function Booking({ user }: BookingProps) {
       return;
     }
 
+    if (user.role === 'Owner' || user.role === 'Admin') {
+      setLoading(false);
+      return;
+    }
+
     fetch(`/api/lots`)
       .then(res => res.json())
       .then(async (lots: ParkingLot[]) => {
@@ -191,6 +196,33 @@ export function Booking({ user }: BookingProps) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <div className="h-64 bg-slate-100 rounded-2xl animate-pulse" />
+      </div>
+    );
+  }
+
+  if (user && (user.role === 'Owner' || user.role === 'Admin')) {
+    const roleName = user.role === 'Admin' ? 'ผู้ดูแลระบบ (Admin)' : 'เจ้าของลาน (Owner)';
+    return (
+      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
+        <div className="w-20 h-20 bg-rose-50 text-rose-500 border border-rose-200 rounded-3xl flex items-center justify-center mx-auto shadow-sm">
+          <AlertTriangle className="w-10 h-10" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-black text-slate-900">
+            ไม่สามารถทำรายการจองได้
+          </h1>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            คุณกำลังเข้าสู่ระบบด้วยบัญชี <strong>{roleName}</strong> ซึ่งระบบสงวนสิทธิ์การจองที่จอดรถสำหรับบัญชีลูกค้า (Customer) เท่านั้น
+          </p>
+        </div>
+        <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
+          <button
+            onClick={() => navigate('/lots')}
+            className="px-6 py-2.5 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-bold text-sm rounded-xl shadow-md transition-all"
+          >
+            กลับไปหน้ารวมลานจอด
+          </button>
+        </div>
       </div>
     );
   }

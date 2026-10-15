@@ -383,16 +383,6 @@ export function Home({ user: propUser }: HomeProps = {}) {
                     )}
                   </div>
 
-                  {/* Interactive Hover Pill overlay on image */}
-                  <div className="absolute inset-x-3 bottom-3 py-1.5 px-3 rounded-xl bg-slate-900/85 backdrop-blur-md text-white text-[11px] font-semibold flex items-center justify-between opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 shadow-lg border border-white/10 pointer-events-none">
-                    <span className="flex items-center gap-1.5 text-sky-300">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      เช็คผังช่องจอดสด
-                    </span>
-                    <span className="text-white font-bold flex items-center gap-1">
-                      จองทันที <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                    </span>
-                  </div>
                 </div>
 
                 {/* Content */}
@@ -455,7 +445,7 @@ export function Home({ user: propUser }: HomeProps = {}) {
                         to={`/lots/${lot.Lot_ID}`}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-sm font-bold bg-sky-50 text-sky-700 group-hover:bg-sky-600 group-hover:text-white shadow-xs group-hover:shadow-md group-hover:shadow-sky-600/25 transition-all duration-200"
                       >
-                        <span>ดูแผนผังและจองช่อง</span>
+                        <span>{currentUser?.role === 'Owner' || currentUser?.role === 'Admin' ? 'ดูแผนผังลานจอด' : 'ดูแผนผังและจองช่อง'}</span>
                         <ChevronRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
                       </Link>
                     </div>

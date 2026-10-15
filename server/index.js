@@ -232,8 +232,8 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// Sync All SQLite Entities to Firebase on Demand
-app.post('/api/firebase/sync-all', async (req, res) => {
+// Sync All SQLite Entities to Firebase on Demand (Admin only)
+app.post('/api/firebase/sync-all', authenticate, requireRole('Admin'), async (req, res) => {
   try {
     const summary = await syncAllDatabaseToFirebase(db);
     res.json({ success: true, message: 'ซิงค์ข้อมูลทุก Entity ไปยัง Firebase สำเร็จ', summary });
@@ -497,12 +497,16 @@ app.post('/api/owner/lots', authenticate, requireRole('Owner', 'Admin'), (req, r
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 60, ?, 20, ?, ?, ?, ?, ?)
   `);
 
-  const rate = Number(feeRatePerHour) || 20;
+  const parsedRate = Number(feeRatePerHour);
+  const rate = (!isNaN(parsedRate) && parsedRate > 0) ? parsedRate : 20;
+  const parsedMax = Number(dailyMaxFee);
+  const maxFee = (!isNaN(parsedMax) && parsedMax >= 0) ? parsedMax : 200;
+
   const result = stmt.run(
     ownerId, lotName, location, district || 'อ.เมืองขอนแก่น',
     openTime || '10:00', closeTime || '22:00',
     rate, rate,
-    Number(dailyMaxFee) || 200,
+    maxFee,
     initialStatus,
     imageUrl || '/images/lots/central-khonkaen.jpg', description || '',
     req.user.username || 'Owner', req.user.username || 'Owner'
@@ -546,7 +550,11 @@ app.put('/api/owner/lots/:id', authenticate, requireRole('Owner', 'Admin'), (req
     }
   }
 
-  const rate = Number(feeRatePerHour) || 20;
+  const parsedRate = Number(feeRatePerHour);
+  const rate = (!isNaN(parsedRate) && parsedRate > 0) ? parsedRate : 20;
+  const parsedMax = Number(dailyMaxFee);
+  const maxFee = (!isNaN(parsedMax) && parsedMax >= 0) ? parsedMax : 200;
+
   db.prepare(`
     UPDATE ParkingLot
     SET LotName = ?, Location = ?, OpenTime = ?, CloseTime = ?,
@@ -556,7 +564,7 @@ app.put('/api/owner/lots/:id', authenticate, requireRole('Owner', 'Admin'), (req
     WHERE Lot_ID = ?
   `).run(
     lotName, location, openTime, closeTime,
-    rate, rate, dailyMaxFee,
+    rate, rate, maxFee,
     description, imageUrl, req.user.username || 'Owner', req.params.id
   );
 
@@ -566,6 +574,10 @@ app.put('/api/owner/lots/:id', authenticate, requireRole('Owner', 'Admin'), (req
 
 app.patch('/api/owner/slots/:id', authenticate, requireRole('Owner', 'Admin'), (req, res) => {
   const { status } = req.body;
+  const ALLOWED_STATUSES = ['Available', 'Occupied', 'Reserved', 'Maintenance'];
+  if (!status || !ALLOWED_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `สถานะช่องจอดไม่ถูกต้อง (ต้องเป็นหนึ่งใน: ${ALLOWED_STATUSES.join(', ')})` });
+  }
 
   if (req.user.role === 'Owner') {
     const slot = db.prepare(`
@@ -696,8 +708,14 @@ app.patch('/api/admin/lots/:id/recommend', authenticate, requireRole('Admin'), (
 // 3. Reservations & Tickets Endpoints (/api/reservations)
 // -------------------------------------------------------------
 
-// Create booking: user selects date, start time, and duration
+// Create booking: user selects date, start time, and duration (Customer only)
 app.post('/api/reservations', authenticate, (req, res) => {
+  if (req.user.role === 'Owner' || req.user.role === 'Admin') {
+    return res.status(403).json({ 
+      error: 'บัญชีประเภทเจ้าของลาน (Owner) และผู้ดูแลระบบ (Admin) ไม่สามารถทำรายการจองที่จอดรถได้ (สงวนสิทธิ์เฉพาะบัญชีลูกค้า Customer เท่านั้น)' 
+    });
+  }
+
   const { slotId, licensePlate, bookingDate, startTime, durationHours } = req.body;
   const customerId = req.user.id;
 
@@ -705,7 +723,8 @@ app.post('/api/reservations', authenticate, (req, res) => {
     return res.status(400).json({ error: 'กรุณากรอกข้อมูลช่องจอด ป้ายทะเบียน วันที่ และเวลาที่จะเข้าจอด' });
   }
 
-  const duration = Math.max(1, Number(durationHours) || 2);
+  const parsedDuration = Number(durationHours);
+  const duration = (!isNaN(parsedDuration) && parsedDuration >= 1 && parsedDuration <= 24) ? Math.floor(parsedDuration) : 2;
   const dateStr = bookingDate || getBangkokNow().substring(0, 10);
   const expectedArrival = `${dateStr} ${startTime}:00`;
 
@@ -714,6 +733,12 @@ app.post('/api/reservations', authenticate, (req, res) => {
   const endDate = new Date(arrivalDate.getTime() + (duration * 3600000));
   const bookedEnd = formatBangkokDateTime(endDate);
 
+  // Validate: arrival time must not be in the past (allow 5-min clock tolerance)
+  const nowBangkokDate = parseDateSafeServer(getBangkokNow()) || new Date();
+  if (arrivalDate.getTime() < nowBangkokDate.getTime() - 5 * 60 * 1000) {
+    return res.status(400).json({ error: 'ไม่สามารถเลือกวันและเวลาที่ผ่านมาแล้วได้ กรุณาเลือกเวลาปัจจุบันหรือล่วงหน้า' });
+  }
+
   // Hold slot for at least 30 mins from arrival, or at least 30 mins from current time
   const holdDate = new Date(Math.max(arrivalDate.getTime() + 1800000, Date.now() + 1800000));
   const holdUntil = formatBangkokDateTime(holdDate);
@@ -721,6 +746,22 @@ app.post('/api/reservations', authenticate, (req, res) => {
   // Concurrency Lock & Atomic Transaction
   try {
     db.exec('BEGIN TRANSACTION;');
+
+    // 0. Check if customer has outstanding unpaid penalties from previous visits
+    const unpaidPenalty = db.prepare(`
+      SELECT d.Booking_ID, d.Totalfee
+      FROM Reservation_Detail d
+      JOIN Reservation r ON d.Booking_ID = r.Booking_ID
+      WHERE r.Customer_ID = ?
+        AND d.Reservation_Status = 'Awaiting_Final_Payment'
+    `).get(customerId);
+
+    if (unpaidPenalty) {
+      db.exec('ROLLBACK;');
+      return res.status(403).json({ 
+        error: `คุณมียอดค้างชำระค่าปรับเกินเวลาจากการใช้งานครั้งก่อน (รหัสการจอง #${unpaidPenalty.Booking_ID}) กรุณาชำระยอดค้างชำระก่อนทำการจองใหม่` 
+      });
+    }
 
     // 1. Verify Slot exists and get Lot info
     const slot = db.prepare(`
@@ -768,12 +809,16 @@ app.post('/api/reservations', authenticate, (req, res) => {
     }
 
     // 3. Check Overlapping Reservation in time interval [expectedArrival, bookedEnd]
+    // Includes Confirmed, Checked_In, and active Pending_Payment reservations
     const conflicting = db.prepare(`
       SELECT r.Booking_ID, d.Expected_Arrival, d.Booked_End, d.Reservation_Status
       FROM Reservation_Detail d
       JOIN Reservation r ON d.Booking_ID = r.Booking_ID
       WHERE d.Slot_ID = ?
-        AND d.Reservation_Status IN ('Confirmed', 'Checked_In')
+        AND (
+          d.Reservation_Status IN ('Confirmed', 'Checked_In')
+          OR (d.Reservation_Status = 'Pending_Payment' AND datetime(d.Created_At, '+10 minutes') > datetime('now', '+7 hours'))
+        )
         AND datetime(d.Expected_Arrival) < datetime(?)
         AND datetime(d.Booked_End) > datetime(?)
     `).get(slotId, bookedEnd, expectedArrival);
@@ -989,6 +1034,26 @@ app.post('/api/reservations/:id/pay-deposit', authenticate, (req, res) => {
 
   const fee = booking.Base_Fee || booking.Deposit_Amount || 20;
 
+  // Re-verify that the slot wasn't confirmed by another booking in the meantime
+  const detail = db.prepare('SELECT * FROM Reservation_Detail WHERE Booking_ID = ?').get(booking.Booking_ID);
+  if (detail) {
+    const doubleBooked = db.prepare(`
+      SELECT Booking_ID, Expected_Arrival, Booked_End
+      FROM Reservation_Detail
+      WHERE Slot_ID = ?
+        AND Booking_ID != ?
+        AND Reservation_Status IN ('Confirmed', 'Checked_In')
+        AND datetime(Expected_Arrival) < datetime(?)
+        AND datetime(Booked_End) > datetime(?)
+    `).get(detail.Slot_ID, detail.Booking_ID, detail.Booked_End, detail.Expected_Arrival);
+
+    if (doubleBooked) {
+      return res.status(409).json({
+        error: 'ขออภัย ช่วงเวลานี้ได้รับการยืนยันและชำระเงินโดยลูกค้ารายอื่นก่อนแล้ว กรุณาทำการจองช่องจอดใหม่อีกครั้ง'
+      });
+    }
+  }
+
   // Record payment
   const payResult = db.prepare(`
     INSERT INTO Payment (Booking_ID, Amount, Payment_Type, Payment_Method, Payment_Status, Created_By, Updated_By)
@@ -1115,8 +1180,8 @@ app.post('/api/reservations/:id/pay-final', authenticate, (req, res) => {
 // 4. QR Check-in & Check-out Engine (/api/scan)
 // -------------------------------------------------------------
 
-// Check-in (with Late Check-in Penalty calculation)
-app.post('/api/scan/check-in', authenticate, (req, res) => {
+// Check-in (with Late Check-in Penalty calculation - Owner/Admin only)
+app.post('/api/scan/check-in', authenticate, requireRole('Owner', 'Admin'), (req, res) => {
   const { qrToken, bookingId } = req.body;
 
   let detail;
@@ -1230,8 +1295,8 @@ app.post('/api/scan/check-in', authenticate, (req, res) => {
   });
 });
 
-// Check-out (with Overtime Penalty *2 calculation)
-app.post('/api/scan/check-out', authenticate, (req, res) => {
+// Check-out (with Overtime Penalty *2 calculation - Owner/Admin only)
+app.post('/api/scan/check-out', authenticate, requireRole('Owner', 'Admin'), (req, res) => {
   const { qrToken, bookingId } = req.body;
 
   let detail;
@@ -1320,6 +1385,14 @@ app.post('/api/scan/check-out', authenticate, (req, res) => {
           Updated_At = ?
       WHERE Booking_ID = ?
     `).run(parkedMin, overtimePenalty, newTotalFee, nowBangkok, detail.Booking_ID);
+
+    // Free up slot immediately because vehicle has physically departed the lot
+    db.prepare(`
+      UPDATE ParkingSlot
+      SET ParkingSlot_Status = 'Available', Updated_At = ?
+      WHERE Slot_ID = ?
+    `).run(nowBangkok, detail.Slot_ID);
+    syncRow('ParkingSlot', detail.Slot_ID);
 
     try {
       const detailRow = db.prepare('SELECT * FROM Reservation_Detail WHERE Booking_ID = ?').get(detail.Booking_ID);

@@ -180,10 +180,16 @@ export function LotDetail({ user }: LotDetailProps) {
     setSelectedSlot(slot);
   };
 
+  const isPrivilegedUser = user?.role === 'Owner' || user?.role === 'Admin';
+
   const handleProceedBooking = () => {
     if (!selectedSlot) return;
     if (!user) {
       setShowLoginModal(true);
+      return;
+    }
+    if (isPrivilegedUser) {
+      toast.error('บัญชีประเภทเจ้าของลาน (Owner) และผู้ดูแลระบบ (Admin) ไม่สามารถจองที่จอดรถได้ (สงวนสิทธิ์เฉพาะลูกค้าเท่านั้น)');
       return;
     }
     navigate(`/booking/${selectedSlot.Slot_ID}?date=${selectedDate}&time=${selectedTime}&duration=${selectedDuration}`);
@@ -313,6 +319,14 @@ export function LotDetail({ user }: LotDetailProps) {
           </div>
         </div>
       </div>
+
+      {/* Role Restriction Banner for Owner/Admin */}
+      {isPrivilegedUser && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3 text-amber-800 text-xs sm:text-sm font-medium shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+          <span>คุณกำลังเข้าใช้งานด้วยบัญชี <strong>{user?.role === 'Admin' ? 'ผู้ดูแลระบบ (Admin)' : 'เจ้าของลาน (Owner)'}</strong> — ระบบเปิดให้ตรวจสอบสถานะผังช่องจอดได้ แต่ไม่สามารถทำรายการจองที่จอดรถได้ (สงวนสิทธิ์เฉพาะบัญชีลูกค้า Customer เท่านั้น)</span>
+        </div>
+      )}
 
       {/* Real-time Parking Slot Layout Section */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
@@ -581,10 +595,16 @@ export function LotDetail({ user }: LotDetailProps) {
                 </button>
                 <button
                   onClick={handleProceedBooking}
-                  className="flex-1 sm:flex-initial px-6 py-2.5 bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-sky-300 transition-all flex items-center justify-center gap-2"
+                  disabled={isPrivilegedUser}
+                  className={`flex-1 sm:flex-initial px-6 py-2.5 font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 ${
+                    isPrivilegedUser
+                      ? 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none'
+                      : 'bg-sky-600 hover:bg-sky-700 active:scale-98 text-white hover:shadow-sky-300'
+                  }`}
+                  title={isPrivilegedUser ? 'เฉพาะบัญชีลูกค้าเท่านั้นที่สามารถจองได้' : ''}
                 >
-                  <span>ดำเนินการจองช่องนี้</span>
-                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isPrivilegedUser ? 'สงวนสิทธิ์เฉพาะลูกค้า' : 'ดำเนินการจองช่องนี้'}</span>
+                  {isPrivilegedUser ? <Lock className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -618,10 +638,15 @@ export function LotDetail({ user }: LotDetailProps) {
             </button>
             <button
               onClick={handleProceedBooking}
-              className="px-4 py-2 sm:px-5 sm:py-2.5 bg-sky-500 hover:bg-sky-400 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg shadow-sky-500/30 transition-all flex items-center gap-1.5"
+              disabled={isPrivilegedUser}
+              className={`px-4 py-2 sm:px-5 sm:py-2.5 font-bold text-xs sm:text-sm rounded-xl shadow-lg transition-all flex items-center gap-1.5 ${
+                isPrivilegedUser
+                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed border border-white/10'
+                  : 'bg-sky-500 hover:bg-sky-400 active:scale-95 text-white shadow-sky-500/30'
+              }`}
             >
-              <span>จองช่องนี้</span>
-              <ChevronRight className="w-4 h-4" />
+              <span>{isPrivilegedUser ? 'สงวนสิทธิ์เฉพาะลูกค้า' : 'จองช่องนี้'}</span>
+              {isPrivilegedUser ? <Lock className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </button>
           </div>
         </div>

@@ -454,9 +454,15 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
       return jsonResponse({ user });
     }
 
-    // 9. Create Reservation
+    // 9. Create Reservation (Customer only)
     if (path === '/api/reservations' && method === 'POST') {
       const user = getStoredUser();
+      if (user?.role === 'Owner' || user?.role === 'Admin') {
+        return jsonResponse({
+          error: 'บัญชีประเภทเจ้าของลาน (Owner) และผู้ดูแลระบบ (Admin) ไม่สามารถทำรายการจองที่จอดรถได้ (สงวนสิทธิ์เฉพาะบัญชีลูกค้า Customer เท่านั้น)'
+        }, 403);
+      }
+
       const bookingId = Date.now();
       const qrToken = 'QR-' + bookingId + '-' + Math.random().toString(36).substring(2, 7).toUpperCase();
       const slotId = Number(body.slotId);
@@ -482,6 +488,10 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
       }
 
       const bookedHours = Number(body.durationHours) || Number(body.bookedHours) || 2;
+      if (isNaN(bookedHours) || bookedHours < 1 || bookedHours > 24) {
+        return jsonResponse({ error: 'ระยะเวลาการจองต้องอยู่ระหว่าง 1 ถึง 24 ชั่วโมง' }, 400);
+      }
+
       let arrivalDate: Date;
       if (body.bookingDate && body.startTime) {
         arrivalDate = new Date(`${body.bookingDate}T${body.startTime}:00+07:00`);
@@ -492,8 +502,61 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
       }
       if (isNaN(arrivalDate.getTime())) arrivalDate = new Date();
 
+      // Validate: cannot book date/time in the past (allow 5 min grace)
+      const nowTime = Date.now();
+      if (arrivalDate.getTime() < nowTime - 5 * 60 * 1000) {
+        return jsonResponse({ error: 'ไม่สามารถเลือกวันและเวลาที่ผ่านมาแล้วได้ กรุณาเลือกเวลาปัจจุบันหรือล่วงหน้า' }, 400);
+      }
+
+      // Check if user has unpaid penalties from previous visits
+      if (user?.id) {
+        try {
+          const resvSnap = await getDocs(query(
+            collection(db, 'Reservation_Detail'),
+            where('Customer_ID', '==', user.id),
+            where('Reservation_Status', '==', 'Awaiting_Final_Payment')
+          ));
+          if (!resvSnap.empty) {
+            const overdueBooking = resvSnap.docs[0].data();
+            return jsonResponse({
+              error: `คุณมียอดค้างชำระค่าปรับเกินเวลาจากการใช้งานครั้งก่อน (#${overdueBooking.Booking_ID}) กรุณาชำระยอดค้างชำระก่อนทำการจองใหม่`
+            }, 403);
+          }
+        } catch (_) {}
+      }
+
       const expectedArrival = arrivalDate.toISOString();
       const bookedEnd = new Date(arrivalDate.getTime() + bookedHours * 3600 * 1000).toISOString();
+
+      // Check slot conflict
+      if (slotId) {
+        try {
+          const conflictSnap = await getDocs(query(
+            collection(db, 'Reservation_Detail'),
+            where('Slot_ID', '==', slotId)
+          ));
+          const arrivalMs = arrivalDate.getTime();
+          const endMs = new Date(bookedEnd).getTime();
+          const nowMs = Date.now();
+
+          for (const d of conflictSnap.docs) {
+            const data = d.data();
+            const status = data.Reservation_Status;
+            const isConfirmed = status === 'Confirmed' || status === 'Checked_In';
+            const isPendingActive = status === 'Pending_Payment' && (nowMs - new Date(data.Created_At || 0).getTime()) < 10 * 60 * 1000;
+
+            if (isConfirmed || isPendingActive) {
+              const resArrival = new Date(data.Expected_Arrival || data.StartTime).getTime();
+              const resEnd = new Date(data.Booked_End || data.EndTime).getTime();
+              if (resArrival < endMs && resEnd > arrivalMs) {
+                return jsonResponse({
+                  error: 'ขออภัย ช่องจอดนี้มีการจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกช่วงเวลาอื่นหรือเลือกช่องจอดอื่น'
+                }, 409);
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
       const totalFee = Number(body.totalFee) || (bookedHours * feeRate);
       const depositAmount = Number(body.depositAmount) || totalFee;
@@ -614,6 +677,33 @@ export async function handleFirestoreRequest(url: string, init?: RequestInit): P
       const detailRef = doc(db, 'Reservation_Detail', String(id));
       const detailSnap = await getDoc(detailRef);
       const detailData = detailSnap.exists() ? detailSnap.data() : null;
+
+      // Re-verify that the slot wasn't confirmed by another booking in the meantime
+      if (detailData?.Slot_ID) {
+        try {
+          const conflictSnap = await getDocs(query(
+            collection(db, 'Reservation_Detail'),
+            where('Slot_ID', '==', detailData.Slot_ID)
+          ));
+          const arrivalMs = new Date(detailData.Expected_Arrival || detailData.StartTime).getTime();
+          const endMs = new Date(detailData.Booked_End || detailData.EndTime).getTime();
+
+          for (const d of conflictSnap.docs) {
+            if (d.id !== String(id)) {
+              const dData = d.data();
+              if (dData.Reservation_Status === 'Confirmed' || dData.Reservation_Status === 'Checked_In') {
+                const resArr = new Date(dData.Expected_Arrival || dData.StartTime).getTime();
+                const resEnd = new Date(dData.Booked_End || dData.EndTime).getTime();
+                if (resArr < endMs && resEnd > arrivalMs) {
+                  return jsonResponse({
+                    error: 'ขออภัย ช่วงเวลานี้ได้รับการยืนยันและชำระเงินโดยลูกค้ารายอื่นก่อนแล้ว กรุณาทำการจองช่องจอดใหม่อีกครั้ง'
+                  }, 409);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
       await updateDoc(detailRef, {
         Reservation_Status: 'Confirmed',
